@@ -1,4 +1,3 @@
-import math
 import wave
 import os
 from os.path import expanduser
@@ -8,6 +7,7 @@ import tkinter.filedialog
 import unicodedata
 import pyaudio
 import numpy as np
+
 
 def reshapeText(text):
     count = 0
@@ -20,14 +20,16 @@ def reshapeText(text):
     return text
 
 
-def printEqualizer(amp_by_freq, filename):
+def printEqualizer(amp_by_freq, filename, bartype="bar"):
     print("\033[18F")
     for i in range(15, 0, -1):
-        #color = "\033[45m" if i<=3 else "\033[46m" if i<=6 else "\033[42m" if i<=9 else "\033[43m" if i<=12 else "\033[41m" 
-        #level = ["\033[0m  "+color+" " if a>=i else "\033[0m   " for a in amp_by_freq]
-        color = "\033[35m" if i<=3 else "\033[36m" if i<=6 else "\033[32m" if i<=9 else "\033[33m" if i<=12 else "\033[31m" 
-        level = ["\033[0m  "+color+"|" if a>=i else "\033[0m   " for a in amp_by_freq]
-        #level = ["  |" if a>=i else "   " for a in amp_by_freq]
+        if bartype == "bar":
+            color = "\033[45m" if i <= 3 else "\033[46m" if i <= 6 else "\033[42m" if i <= 9 else "\033[43m" if i <= 12 else "\033[41m"
+            level = ["\033[0m  "+color+" " if a >= i else "\033[0m   " for a in amp_by_freq]
+        elif bartype == "line":
+            color = "\033[35m" if i <= 3 else "\033[36m" if i <= 6 else "\033[32m" if i <= 9 else "\033[33m" if i <= 12 else "\033[31m"
+            level = ["\033[0m  "+color+"|" if a >= i else "\033[0m   " for a in amp_by_freq]
+        # level = ["  |" if a>=i else "   " for a in amp_by_freq]
         print("\033[0m "+"".join(level))
     print("\033[0m  LOW---------------MID--------------HIGH")
     print("  "+"".join(filename[:40]))
@@ -35,14 +37,14 @@ def printEqualizer(amp_by_freq, filename):
 
 def getAmpByFreq(buf, framerate):
     data = np.frombuffer(buf, dtype='int16')
-    #sampwidth == 4:
-        #data = np.frombuffer(buf, dtype='int32')
+    # sampwidth == 4:
+    # data = np.frombuffer(buf, dtype='int32')
     f = np.fft.rfft(data)
     freq = np.fft.rfftfreq(data.shape[0], d=1.0/framerate)
     amp = np.abs(f)
     amp_by_freq = []
     for i in range(len(sample_freqs)-1):
-        p = np.sum(amp[(freq>sample_freqs[i]) & (freq<sample_freqs[i+1])])
+        p = np.sum(amp[(freq > sample_freqs[i]) & (freq < sample_freqs[i+1])])
         try:
             amp_by_freq.append(p//1000000)
         except ValueError:
@@ -50,7 +52,8 @@ def getAmpByFreq(buf, framerate):
     return amp_by_freq
 
 
-def playWF(path):
+def playWF(path, args):
+    print("\033[2J")
     filename = os.path.splitext(os.path.basename(path))[0]
     filename = list(reshapeText(filename))
     wf = wave.open(path, mode='rb')
@@ -62,38 +65,35 @@ def playWF(path):
         format=p.get_format_from_width(sampwidth),
         channels=channels,
         rate=framerate,
-        output=True) 
-    chunk = 1024 
-    wf.rewind() 
-    if sampwidth!=2 or channels!=2:
+        output=True)
+    chunk = 1024
+    wf.rewind()
+    if sampwidth != 2 or channels != 2:
         print(sampwidth, channels)
     buf = wf.readframes(chunk)
     cnt = 0
     while buf:
         stream.write(buf)
-        if cnt%1 == 0:
+        if cnt % 1 == 0:
             amp_by_freq = getAmpByFreq(buf, framerate)
-            printEqualizer(amp_by_freq, filename)
+            printEqualizer(amp_by_freq, filename, args.bartype)
         buf = wf.readframes(chunk)
-        if cnt%5 == 0:
+        if cnt % 10 == 0:
             filename = filename[1:] + filename[:1]
         cnt += 1
     stream.close()
     p.terminate()
 
 
-def main():
+def main(args):
     print("\033[2J")
     global sample_freqs
     sample_freqs = [20, 40, 70, 100, 200, 400, 700, 1000, 2000, 4000, 7000, 10000, 20000, 40000]
-    parser = argparse.ArgumentParser(description='')
-    parser.add_argument('-D', '--dir', action='store_true', help='ディレクトリ選択')
-    args = parser.parse_args()
     home = expanduser("~")
     iDir = os.path.abspath(os.path.dirname(home))
     if args.dir:
         root = tk.Tk()
-        dir_path = tkinter.filedialog.askdirectory(initialdir = iDir)
+        dir_path = tkinter.filedialog.askdirectory(initialdir=iDir)
         root.destroy()
         files = os.listdir(dir_path)
         file_paths = [f for f in files if os.path.isfile(os.path.join(dir_path, f))]
@@ -101,14 +101,18 @@ def main():
         while(True):
             wav_path = np.random.choice(wav_paths, 1)[0]
             path = "{}/{}".format(dir_path, wav_path)
-            playWF(path)
+            playWF(path, args)
     else:
         fTyp = [("", "*.wav")]
         root = tk.Tk()
         path = tkinter.filedialog.askopenfilename(filetypes=fTyp, initialdir=iDir)
         root.destroy()
-        playWF(path)
+        playWF(path, args)
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('-D', '--dir', action='store_true', help='ディレクトリ選択')
+    parser.add_argument('--bartype', default="bar", help='select in [bar, line]')
+    args = parser.parse_args()
+    main(args)
